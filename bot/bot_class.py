@@ -57,6 +57,7 @@ class Bot:
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'span.login-btn__caption')))
 
     def check_login(self):
+        """Функция проверки доступа к личному кабинету"""
         try:
             log = self.waiter.until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'span.login-btn__caption')))  # Ждём загрузки ярлыка
@@ -87,7 +88,7 @@ class Bot:
             keyword_input.send_keys(self.purchase_number)
 
     def set_keyword_filter(self):
-        """Записывает ТРУ в поле фильтра"""
+        """Записывает 'Наименование ТРУ' в поле фильтра"""
         keyword_input = self.waiter.until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'input#filterField-2-input')))
         self.actions.move_to_element(keyword_input).perform()
@@ -111,12 +112,13 @@ class Bot:
         all_cards = self.cards_waiter.until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'app-purchase-card.ng-star-inserted')))
         for card in all_cards:
-            """Находит номер заказа каждой карточки и вызываем функцию  функцию Controller.add_bet(int(номер заказа))"""
+            """Находит номер заказа каждой карточки и вызываем функцию  функцию Controller.add_bet(int(номер заказа)) 
+            запсывает его в базу данных"""
             bet_id = card.find_element(By.CSS_SELECTOR, 'h3#tradeNumber')
             Controller.add_bet(bet_id=int(bet_id.text))
 
     def goto_place_button(self):
-        """Скролит страничку вниз"""
+        """Скролит страничку"""
         y_offset = 10
         while True:
             try:
@@ -274,20 +276,20 @@ class Bot:
 
     def work(self):
         #TODO потом включить
-        # self.check_login()
+        self.check_login()
         try:
             self.get_cards()
         except TimeoutException:
             return False
-        """Повторяет логику функции self.get_cards()"""
+
+        """Находит все карточки лотов на странице"""
         all_cards = self.waiter.until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'app-purchase-card.ng-star-inserted')))
         for card in all_cards:
-            bet_id = card.find_element(By.CSS_SELECTOR, 'h3#tradeNumber') # Находит номер закупки
-            """до этого момента"""
+            bet_id = card.find_element(By.CSS_SELECTOR, 'h3#tradeNumber') # Находит номер закупки в карточке лота
             if not Controller.get_bet_status(int(bet_id.text)) and int(bet_id) not in self.bets_to_exclude:  # Если номера закупки нет среди исключений
-                send_bet_button = card.find_element(By.CSS_SELECTOR, 'button#applicationSendButton')
-                send_bet_button.click()  # Кликаем кнопку 'подать предложение'
+                send_bet_button = card.find_element(By.CSS_SELECTOR, 'button#applicationSendButton')  # Находит
+                send_bet_button.click()  # И кликает кнопку 'подать предложение'
                 if self.place_bet():
                     Controller.update_bet_status(True, bet_id=int(bet_id.text))
                     return True
@@ -304,6 +306,7 @@ class Bot:
                 if self.purchase_number: self.set_number_filter()  # Запись номера закупки в поле фильтра
                 self.apply_filters()  # Применить фильтр
             except TimeoutException:
+                print('Тут timeout и перезагрузка')
                 self.driver.get(TRADES_URL)
                 continue
             except Exception as e:
@@ -312,6 +315,7 @@ class Bot:
             try:
                 self.work()
             except TimeoutException:
+                print('Или тут timeout и перезагрузка')
                 continue
             except Exception as e:
                 print(f'Логи: {e}')
