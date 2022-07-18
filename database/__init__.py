@@ -1,4 +1,5 @@
-from .controller import Controller
+from .controller import Controller, DataController
 
 
 Controller = Controller()
+DataController = DataController()

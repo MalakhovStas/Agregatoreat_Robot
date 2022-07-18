@@ -14,15 +14,17 @@ from webdriver_manager.chrome import ChromeDriverManager
 from config import MAIN_URL, TRADES_URL, LOGIN_URL
 
 from database import Controller
+from colorama import init, Fore
 
 
 class Bot:
     def __init__(self, mail: str, password: str, certificate_name: str, tin: str, keyword: str, first_desc: str,
-                 second_desc: str, bets_to_exclude: list, purchase_number: str, wait_time: int = 30,
-                 error_time: int = 1, cards_time: int = 3):
+                 second_desc: str, bets_to_exclude: str, purchase_number: str, only_EAT: str, automatic_sbsc: str,
+                 wait_time: int = 20, error_time: int = 1, cards_time: int = 3):
         self.service = Service(executable_path=ChromeDriverManager().install())
         self.options = Options()
-        self.options.add_argument('--start-maximized')
+        self.options.add_experimental_option("excludeSwitches", ['enable-automation'])
+        self.options.add_argument('start-maximized')
         self.options.add_extension('plugin.crx')
         self.driver: Chrome = Chrome(service=self.service, options=self.options)
         self.waiter: WebDriverWait = WebDriverWait(self.driver, wait_time)
@@ -36,25 +38,32 @@ class Bot:
         self.keyword = keyword.strip()
         self.first_desc = first_desc.strip()
         self.second_desc = second_desc.strip()
-        self.bets_to_exclude: list = [int(bet_to_exclude) for bet_to_exclude in bets_to_exclude if len(bet_to_exclude)]
+        self.bets_to_exclude: list = [int(bet_to_exclude) for bet_to_exclude in
+                                      bets_to_exclude.split() if len(bet_to_exclude) and bet_to_exclude.isdigit()]
         self. purchase_number = purchase_number.strip()
+        self.only_EAT = int(only_EAT.strip()) if only_EAT.strip().isdigit() else 0
+        self.automatic_sbsc = automatic_sbsc
 
     def login(self):
         self.driver.get(LOGIN_URL)
         login_input = self.waiter.until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="Username"]')))
         login_input.send_keys(self.mail)
+
         password_input = self.waiter.until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[name="Password"]')))
         password_input.send_keys(self.password)
-        #TODO удалить старый клик на кнопку входа в лк
+
+        #старый клик на кнопку входа в лк
         # login_button = self.waiter.until(
         #     EC.visibility_of_element_located((By.CSS_SELECTOR, 'button[value="login"]')))
         login_button = self.waiter.until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, '#loginForm > fieldset > button')))
         login_button.click()
+
         self.waiter.until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'span.login-btn__caption')))
+        sleep(2)
 
     def check_login(self):
         """Функция проверки доступа к личному кабинету"""
@@ -81,7 +90,6 @@ class Bot:
     def set_number_filter(self):
         """Записывает номер закупки в поле фильтра"""
         if self.purchase_number:
-            print('печать')
             keyword_input = self.waiter.until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, 'input#filterField-3-input')))
             self.actions.move_to_element(keyword_input).perform()
@@ -112,35 +120,63 @@ class Bot:
         all_cards = self.cards_waiter.until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'app-purchase-card.ng-star-inserted')))
         for card in all_cards:
-            """Находит номер заказа каждой карточки и вызываем функцию  функцию Controller.add_bet(int(номер заказа)) 
-            запсывает его в базу данных"""
+            """Находит номер заказа каждой карточки и записывает его в базу данных"""
             bet_id = card.find_element(By.CSS_SELECTOR, 'h3#tradeNumber')
             Controller.add_bet(bet_id=int(bet_id.text))
 
     def goto_place_button(self):
-        """Скролит страничку"""
+        """Нажимает кнопку подать предложение, если не нашёл кнопку -> скролит вверх"""
         y_offset = 10
         while True:
             try:
                 place_bet_button = self.waiter.until(EC.visibility_of_element_located(
-                    (By.CSS_SELECTOR, '.c-btn-group > button.c-btn.c-btn--primary')))  # это не нашел
+                    (By.CSS_SELECTOR, '.c-btn-group > button.c-btn.c-btn--primary')))  # Кнопка подать заявку
                 place_bet_button.click()
+
             except ElementClickInterceptedException:
-                self.driver.execute_script(f'window.scroll(0, {y_offset})')  # это скрол
+                self.driver.execute_script(f'window.scroll(0, {y_offset})')
                 y_offset += 10
             else:
                 break
 
+    # TODO проверить работу этого метода
+    def choice_nds(self):
+        """Выбирает - ндс - 'не облагается' в шапке документа во время заполнения карточки"""
+        nds_all = self.waiter.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, '#tax-for-all-toggler > div > span')))
+
+        chc_nds = self.waiter.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, '#ui-accordiontab-2-content > div > div > app-specification > app-specification-list-general-form > div > div.isTaxForAll.flex.tax-switch > div.no-padding.tax-dropdown-2 > app-general-tax-dropdown')))
+
+        y_offset = - 150
+        while True:
+            try:
+                chc_nds.click()
+                no_tax = chc_nds.find_element(
+                    By.CSS_SELECTOR, '.ui-dropdown-items-wrapper p-dropdownitem:nth-of-type(1)')
+                no_tax.click()
+
+            except ElementClickInterceptedException:
+                loc = chc_nds.location
+                self.driver.execute_script(f'window.scroll({loc["x"]}, {loc["y"] + y_offset});')
+                y_offset -= 50
+            else:
+                break
+        """Включает флаг - 'задать НДС для всех' в шапке документа во время заполнения карточки"""
+        nds_all.click()
+        sleep(1)
+
     def write_descriptions(self):
+        """Записывает значения first_desc и second_desc в поля карточки во время заполнения карточки"""
         select_tru_buttons = self.waiter.until(
-            EC.visibility_of_all_elements_located((By.CSS_SELECTOR, 'svg-icon.select-tru__icon.ng-star-inserted')))  # это не нашел
+            EC.visibility_of_all_elements_located((By.CSS_SELECTOR, 'svg-icon.select-tru__icon.ng-star-inserted')))
         for select_tru_button in select_tru_buttons:
             y_offset = -10
             while True:
                 try:
                     select_tru_button.click()
                 except ElementClickInterceptedException:
-                    self.driver.execute_script(f'window.scroll(0, {y_offset});')  # это скрол
+                    self.driver.execute_script(f'window.scroll(0, {y_offset});')
                     y_offset -= 10
                 else:
                     break
@@ -159,33 +195,43 @@ class Bot:
             accept_tru_button.click()
 
     def place_bet(self):
+        """Находит и кликает кнопку - 'подать предложение' """
         send_bet_button = self.waiter.until(
             EC.visibility_of_element_located(
                 (By.CSS_SELECTOR, '.c-btn-group > button.c-btn.c-btn--primary')))
         self.actions.move_to_element(send_bet_button).perform()
+
         self.goto_place_button()
+
+        self.choice_nds()
         try:
+            """Находим элемент возможности редактирования карточки 'карандаш'"""
             self.error_waiter.until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, 'svg-icon.select-tru__icon.ng-star-inserted')))
         except TimeoutException:
-            pass
+            print(f'{Fore.RED}Ошибка! '
+                  f'{Fore.MAGENTA}В этом лоте нет маркера возможности редактирования полей ТРУ{Fore.RESET}')
         else:
             self.write_descriptions()
-        is_price_with_tax_checkboxes = self.waiter.until(
-            EC.visibility_of_all_elements_located((By.CSS_SELECTOR, 'p-checkbox[formcontrolname="isPriceWithTax"]')))
-        for checkbox in is_price_with_tax_checkboxes:
-            y_offset = -10
-            while True:
-                try:
-                    self.waiter.until(EC.element_to_be_clickable(checkbox))
-                    checkbox.click()
-                except ElementClickInterceptedException:
-                    self.driver.execute_script(f'window.scroll(0, {y_offset});')
-                    y_offset -= 10
-                else:
-                    break
+
+        # Устаревшая логика, заменена флагами и выбором на сайте
+        # """Циклом во всех позициях ставим флаг 'Цена с НДС'"""
+        # is_price_with_tax_checkboxes = self.waiter.until(
+        #     EC.visibility_of_all_elements_located((By.CSS_SELECTOR, 'p-checkbox[formcontrolname="isPriceWithTax"]')))
+        # for checkbox in is_price_with_tax_checkboxes:
+        #     y_offset = -10
+        #     while True:
+        #         try:
+        #             self.waiter.until(EC.element_to_be_clickable(checkbox))
+        #             checkbox.click()
+        #         except ElementClickInterceptedException:
+        #             self.driver.execute_script(f'window.scroll(0, {y_offset});')
+        #             y_offset -= 10
+        #         else:
+        #             break
         price_inputs = self.waiter.until(
             EC.visibility_of_all_elements_located((By.CSS_SELECTOR, 'td.col-price.col-editable > input')))
+        """Циклом во всех позициях меняем стоимость на 0,01"""
         for price_input in price_inputs:
             y_offset = 10
             up = True
@@ -203,21 +249,25 @@ class Bot:
                         y_offset -= 10
                 else:
                     break
-        tax_percent_dropdowns = self.waiter.until(
-            EC.visibility_of_all_elements_located((By.CSS_SELECTOR, 'p-dropdown[formcontrolname="taxPercent"]')))
-        for dropdown in tax_percent_dropdowns:
-            y_offset = -10
-            while True:
-                try:
-                    dropdown.click()
-                except ElementClickInterceptedException:
-                    self.driver.execute_script(f'window.scroll(0, {y_offset});')
-                    y_offset -= 10
-                else:
-                    break
-            no_tax_item = dropdown.find_element(
-                By.CSS_SELECTOR, '.ui-dropdown-items-wrapper p-dropdownitem:nth-of-type(1)')
-            no_tax_item.click()
+
+        # Устаревшая логика, заменена флагами и выбором на сайте
+        # """Циклом во всех позициях устанавливает значение 'Не облагается'"""
+        # tax_percent_dropdowns = self.waiter.until(
+        #     EC.visibility_of_all_elements_located((By.CSS_SELECTOR, 'p-dropdown[formcontrolname="taxPercent"]')))
+        # for dropdown in tax_percent_dropdowns:
+        #     y_offset = -10
+        #     while True:
+        #         try:
+        #             dropdown.click()
+        #         except ElementClickInterceptedException:
+        #             self.driver.execute_script(f'window.scroll(0, {y_offset});')
+        #             y_offset -= 10
+        #         else:
+        #             break
+        #     no_tax_item = dropdown.find_element(
+        #         By.CSS_SELECTOR, '.ui-dropdown-items-wrapper p-dropdownitem:nth-of-type(1)')
+        #     no_tax_item.click()
+
         self.goto_place_button()
         confirm_bet_button = self.waiter.until(
             EC.visibility_of_element_located(
@@ -227,6 +277,7 @@ class Bot:
         sign_in_button = self.waiter.until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, 'button#signButton')))
         sign_in_button.click()
+
         try:
             app = Application(backend="uia").connect(title="Подтверждение доступа", timeout=5)
             confirmWin = app.window(title_re=u'Подтверждение доступа')
@@ -245,6 +296,7 @@ class Bot:
                     yesBtn.click()
             except Exception as e:
                 return False
+
         certificates = self.waiter.until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'span.fullname')))
         for certificate in certificates:
@@ -254,6 +306,7 @@ class Bot:
         sign_in_button = self.waiter.until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, '.modal-wrapper__btns > button.c-btn.c-btn--primary')))
         sign_in_button.click()
+
         try:
             app = Application(backend="uia").connect(title_re="Выбор ключевого носителя - КриптоПро CSP", timeout=5)
             confirmWin = app.window(title_re=u'Выбор ключевого носителя - КриптоПро CSP')
@@ -272,26 +325,37 @@ class Bot:
                     yesBtn.click()
             except Exception as e:
                 return False
+
+        #Блок автоматической подписи лота
+        # Кнопка по селектору:  '#modal > div > button'
+        # if self.automatic_sbsc == 'y':
+        #     subscribe = self.waiter.until(
+        #         EC.element_to_be_clickable((
+        #             By.XPATH, '/html/body/p-dynamicdialog/div/div/div/app-certicate-select-modal/section/div/button')))
+        #     subscribe.click()
+
         return True
 
     def work(self):
-        #TODO потом включить
         self.check_login()
         try:
             self.get_cards()
         except TimeoutException:
             return False
-
         """Находит все карточки лотов на странице"""
         all_cards = self.waiter.until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'app-purchase-card.ng-star-inserted')))
         for card in all_cards:
             bet_id = card.find_element(By.CSS_SELECTOR, 'h3#tradeNumber') # Находит номер закупки в карточке лота
-            if not Controller.get_bet_status(int(bet_id.text)) and int(bet_id) not in self.bets_to_exclude:  # Если номера закупки нет среди исключений
+
+            # Если номера закупки нет в базе данных и среди исключений введённых пользователем
+            if not Controller.get_bet_status(int(bet_id.text)) and int(bet_id.text) not in self.bets_to_exclude:
                 send_bet_button = card.find_element(By.CSS_SELECTOR, 'button#applicationSendButton')  # Находит
                 send_bet_button.click()  # И кликает кнопку 'подать предложение'
+
+                # Если предложение успешно подано(в том числе подписано ЭЦП)
                 if self.place_bet():
-                    Controller.update_bet_status(True, bet_id=int(bet_id.text))
+                    Controller.update_bet_status(True, bet_id=int(bet_id.text))  # Записывает его номер в БД
                     return True
                 else:
                     return False
@@ -300,23 +364,23 @@ class Bot:
         while True:
             self.driver.get(TRADES_URL)
             try:
-                self.set_only_eat_filter()
-                if self.keyword: self.set_keyword_filter()  # Запись ТРУ в поле фильтра
+                if self.only_EAT: self.set_only_eat_filter()  # Включаем флаг EAT
+                if self.keyword: self.set_keyword_filter()  # Запись ТРУ в поле фильтра "ключевая фраза"
                 if self.tin: self.set_tin_filter()  # Запись ИНН в поле фильтра
                 if self.purchase_number: self.set_number_filter()  # Запись номера закупки в поле фильтра
                 self.apply_filters()  # Применить фильтр
             except TimeoutException:
-                print('Тут timeout и перезагрузка')
-                self.driver.get(TRADES_URL)
+                # self.driver.get(TRADES_URL)
                 continue
             except Exception as e:
-                print(f'Логи: {e}')
+                sleep(2)
+                print(f'Логи по фильтру: {e}')
                 continue
             try:
                 self.work()
             except TimeoutException:
-                print('Или тут timeout и перезагрузка')
                 continue
             except Exception as e:
-                print(f'Логи: {e}')
+                sleep(2)
+                print(f'Логи -> func work: {e}')
                 continue
