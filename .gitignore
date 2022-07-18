@@ -180,3 +180,5 @@ dmypy.json
 cython_debug/
 
 .idea
+
+main.db

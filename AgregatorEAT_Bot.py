@@ -42,7 +42,7 @@ def data_answer():
             certificate_name = input('Введите название сертификата: ')
 
             only_EAT = input('Включить флаг EAT - 1/0: ')
-            only_EAT = 0 if only_EAT != '1' else only_EAT
+            only_EAT = '0' if only_EAT != '1' else only_EAT
 
             tin = input('Введите ИНН для поиска или нажмите Enter: ')
             bets_to_exclude = input('Введите номера лотов для исключения через пробел: ')
