@@ -94,7 +94,4 @@ if __name__ == '__main__':
 # stockastate@gmail.com
 # 567sT678!
 
-# Настройки логера логуру хотел подключить.
-# LOG_FMT = '{time:DD-MM-YYYY at HH:mm:ss} | {level: <8} | func: {function: ^15} | line: {line: >3} | message: {message}'
-# logger.add(sink='logs/debug.log', format=LOG_FMT, level='INFO', diagnose=True, backtrace=False,
-#            rotation="100 MB", retention=2, compression="zip")
+#100167524122100066
