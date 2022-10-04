@@ -2,7 +2,7 @@ from time import sleep
 
 from pywinauto.application import Application
 from selenium.common.exceptions import StaleElementReferenceException, ElementClickInterceptedException, \
-    TimeoutException
+    TimeoutException, InvalidSelectorException
 from selenium.webdriver import Chrome, ActionChains, Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -10,12 +10,15 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
-
+from selenium.webdriver.remote.webelement import WebElement
 from config import MAIN_URL, TRADES_URL, LOGIN_URL
-
+# from loguru import logger
 from database import Controller
 from colorama import init, Fore
 
+# LOG_FMT = '{time:DD-MM-YYYY at HH:mm:ss} | {level: <8} | func: {function: ^15} | line: {line: >3} | message: {message}'
+# logger.add(sink='logs/debug.log', format=LOG_FMT, level='INFO', diagnose=True, backtrace=False,
+#            rotation="100 MB", retention=2, compression="zip")
 
 class Bot:
     def __init__(self, mail: str, password: str, certificate_name: str, tin: str, keyword: str, first_desc: str,
@@ -70,6 +73,10 @@ class Bot:
         try:
             log = self.waiter.until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'span.login-btn__caption')))  # Ждём загрузки ярлыка
+            loc_log = log.location
+            self.driver.execute_script(f'window.scroll({loc_log["x"]}, {loc_log["y"]});')
+            sleep(5)
+
             if log.text.strip().lower() == 'личный кабинет':  # Если текст на ярлыке - 'личный кабинет'
                 login_refresh_button = self.waiter.until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'button.btn.btn--yellow.login-btn')))
@@ -105,9 +112,12 @@ class Bot:
     def set_tin_filter(self):
         """Записывает ИНН в поле фильтра"""
         tin_input = self.waiter.until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, 'input#filterField-13-autocomplete')))
-        self.actions.move_to_element(tin_input).perform()
+            EC.visibility_of_element_located((By.CSS_SELECTOR, 'input#filterField-14-autocomplete'))) # #filterField-14-autocomplete
+        # self.actions.move_to_element(tin_input).perform()
+        loc_tin = tin_input.location
+        self.driver.execute_script(f'window.scroll({loc_tin["x"]}, {loc_tin["y"]+50});')
         tin_input.send_keys(self.tin)
+        sleep(5)
 
     def apply_filters(self):
         """Нажимает кнопку 'показать' - применяем введенные значения фильтров"""
@@ -139,15 +149,16 @@ class Bot:
             else:
                 break
 
+    # filterField-14-autocomplete
     # TODO проверить работу этого метода
     def choice_nds(self):
         """Выбирает - ндс - 'не облагается' в шапке документа во время заполнения карточки"""
-        nds_all = self.waiter.until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, '#tax-for-all-toggler > div > span')))
-
         chc_nds = self.waiter.until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, '#ui-accordiontab-2-content > div > div > app-specification > app-specification-list-general-form > div > div.isTaxForAll.flex.tax-switch > div.no-padding.tax-dropdown-2 > app-general-tax-dropdown')))
-
+            EC.element_to_be_clickable((
+                By.CSS_SELECTOR,
+                '#ui-accordiontab-2-content > div > div > app-specification > app-specification-list-general'
+                '-form > div > div.isTaxForAll.flex.tax-switch > div.no-padding.tax-dropdown-2 > '
+                'app-general-tax-dropdown')))
         y_offset = - 150
         while True:
             try:
@@ -155,16 +166,32 @@ class Bot:
                 no_tax = chc_nds.find_element(
                     By.CSS_SELECTOR, '.ui-dropdown-items-wrapper p-dropdownitem:nth-of-type(1)')
                 no_tax.click()
-
             except ElementClickInterceptedException:
                 loc = chc_nds.location
                 self.driver.execute_script(f'window.scroll({loc["x"]}, {loc["y"] + y_offset});')
                 y_offset -= 50
             else:
+                # '#ui-accordiontab-2-content > div > div > app-specification > app-specification-list-general-form > div > div.isTaxForAll.flex.tax-switch > div.no-padding.tax-dropdown-2 > app-general-tax-dropdown > p-dropdown > div > div.ui-dropdown-label-container.ng-tns-c89-16 > span'
+
                 break
+
         """Включает флаг - 'задать НДС для всех' в шапке документа во время заполнения карточки"""
-        nds_all.click()
-        sleep(1)
+        while True:
+            try:
+                nds_all: WebElement = self.waiter.until(
+                    EC.element_to_be_clickable((
+                        By.CSS_SELECTOR, '#tax-for-all-toggler > div > span.ui-inputswitch-slider')))
+                nds_all.click()
+                sleep(0.5)
+                nds_all_control = self.waiter.until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, 'input#tax-for-all-toggler[type = "checkbox"][aria-labelledby = "label"]')))\
+                    .get_dom_attribute('aria-checked')
+            except (ElementClickInterceptedException, InvalidSelectorException, TimeoutException):
+                continue
+            else:
+                if nds_all_control == 'true':
+                    break
 
     def write_descriptions(self):
         """Записывает значения first_desc и second_desc в поля карточки во время заполнения карточки"""
@@ -328,11 +355,16 @@ class Bot:
 
         #Блок автоматической подписи лота
         # Кнопка по селектору:  '#modal > div > button'
-        # if self.automatic_sbsc == 'y':
-        #     subscribe = self.waiter.until(
-        #         EC.element_to_be_clickable((
-        #             By.XPATH, '/html/body/p-dynamicdialog/div/div/div/app-certicate-select-modal/section/div/button')))
-        #     subscribe.click()
+        if self.automatic_sbsc == 'y':
+            try:
+                subscribe = self.waiter.until(
+                    EC.element_to_be_clickable((
+                        By.XPATH, '/html/body/p-dynamicdialog/div/div/div/app-certicate-select-modal/section/div/button')))
+                subscribe.click()
+            except TimeoutException:
+                print('нет кнопки')
+            except ElementClickInterceptedException:
+                print('кнопка не кликабельная')
 
         return True
 
