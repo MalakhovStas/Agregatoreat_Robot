@@ -355,7 +355,7 @@ class Bot:
 
         #Блок автоматической подписи лота
         # Кнопка по селектору:  '#modal > div > button'
-        if self.automatic_sbsc == 'y':
+        if self.automatic_sbsc.lower() == 'y':
             try:
                 subscribe = self.waiter.until(
                     EC.element_to_be_clickable((
@@ -365,6 +365,8 @@ class Bot:
                 print('нет кнопки')
             except ElementClickInterceptedException:
                 print('кнопка не кликабельная')
+            else:
+                input('Лот успешно подписан, для продолжения нажмите Enter: ')
 
         return True
 
