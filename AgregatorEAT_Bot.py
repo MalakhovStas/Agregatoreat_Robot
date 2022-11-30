@@ -63,6 +63,8 @@ if __name__ == '__main__':
 
     mail, password, first_desc, second_desc, certificate_name, only_EAT, tin, bets_to_exclude = data_answer()
     purchase_number = input('Введите номер лота для поиска или нажмите Enter: ')
+    name_org_client = input(f'Введите наименование организации{Fore.YELLOW}(только для перепроверки лота, в поиске '
+                            f'не участвует){Fore.RESET} или нажмите Enter: ')
     keyword = input('Введите ключевую фразу для поиска в наименовании или нажмите Enter: ')
     automatic_sbsc = input('Подписывать лоты автоматически - y/n: ')
 
@@ -70,6 +72,7 @@ if __name__ == '__main__':
               password=password,
               certificate_name=certificate_name,
               tin=tin,
+              name_org_client=name_org_client,
               keyword=keyword,
               first_desc=first_desc,
               second_desc=second_desc,
@@ -90,10 +93,22 @@ if __name__ == '__main__':
 # pip uninstall comtypes
 # pip install --no-cache-dir comtypes
 
-# Чей-то логин пароль, с ними тестировал
+# Чей-то логин пароль, с ними тестировал, сейчас не работает
 # stockastate@gmail.com
 # 567sT678!
 
 
+# от Жени, работает
+# stroybizgrupp@gmail.com
+# Stroybizgrupp1!
+# Hазвание ТРУ: ТРУ
+# Описание ТРУ: ТРУ
+# Название сертификата:
+# Флаг EAT: вкл
+# ИНН для поиска:
+# Hомера лотов для исключения:
 
-#7702679523
+
+#Pyinstaller
+# pyinstaller --onefile --icon=rbt.ico AgregatorEAT_Bot.py
+# pyinstaller -F -i 'rbt.ico' AgregatorEAT_Bot.py
